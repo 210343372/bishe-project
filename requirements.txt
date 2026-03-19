@@ -1,5 +1,5 @@
-flask==2.3.3
-pandas==2.1.4
-numpy==1.26.2
-requests==2.31.0
-gunicorn==21.2.0
+flask==3.0.3          # 升级Flask到最新稳定版，兼容Python 3.14
+pandas==2.2.2         # 升级pandas到兼容Python 3.14的版本
+numpy==1.26.4         # 匹配pandas 2.2.2的依赖
+requests==2.32.3      # 最新稳定版
+gunicorn==22.0.0      # 最新稳定版
