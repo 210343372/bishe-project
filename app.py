@@ -5,6 +5,7 @@ import numpy as np
 import requests
 import random
 from functools import lru_cache
+import time
 
 # ==========================================
 # 正确的Flask路径配置
@@ -14,7 +15,7 @@ TEMPLATES_DIR = os.path.join(BASE_DIR, 'templates')
 app = Flask(__name__, template_folder=TEMPLATES_DIR)
 
 # ==========================================
-# 1. 光伏发电量仿真模型（优先用真实海拔API）
+# 1. 光伏发电量仿真模型（彻底修复海拔获取逻辑）
 # ==========================================
 class PVGenerationModel:
     def __init__(self):
@@ -39,9 +40,9 @@ class PVGenerationModel:
         else:
             raise ValueError("请选择模式：指定经纬度 或 random_point=True")
 
-        # 【核心修复】优先用Open-Elevation API获取真实海拔
+        # 彻底去掉高德Key判断，只调用Open-Elevation API
         self.site_elevation = self._get_real_elevation(self.site_lat, self.site_lon)
-        print(f"🏔️  海拔数据：{self.site_elevation}m")
+        print(f"🏔️  最终海拔数据：{self.site_elevation}m")
 
         weather_df = self._get_local_weather_data()
         generation_df = self._calculate_pv_generation(weather_df, float(system_capacity_kw))
@@ -66,32 +67,49 @@ class PVGenerationModel:
         random_lon = round(random.uniform(lon_min, lon_max), 6)
         return random_lat, random_lon
 
-    # 【核心修复】直接优先用Open-Elevation API，去掉强制模拟的逻辑
+    # 核心修复：多次重试API，避免限流/超时导致失败
     def _get_real_elevation(self, lat, lon):
-        try:
-            return self._get_open_elevation(lat, lon)
-        except Exception as e:
-            print(f"⚠️ 真实海拔API调用失败：{str(e)}，使用模拟海拔")
-            return self._get_simulation_elevation(lat, lon)
+        max_retries = 3  # 最多重试3次
+        retry_delay = 1  # 每次重试间隔1秒
+        for attempt in range(max_retries):
+            try:
+                return self._get_open_elevation(lat, lon)
+            except Exception as e:
+                print(f"⚠️ 第{attempt+1}次获取真实海拔失败：{str(e)}")
+                if attempt < max_retries - 1:
+                    time.sleep(retry_delay)
+                    retry_delay *= 2  # 指数退避，减少限流概率
+                else:
+                    print(f"❌ 所有重试失败，使用模拟海拔")
+                    return self._get_simulation_elevation(lat, lon)
 
-    # 缓存API结果，相同经纬度不重复请求
-    @lru_cache(maxsize=100)
+    # 缓存+优化请求头，降低API限流概率
+    @lru_cache(maxsize=200)  # 扩大缓存容量
     def _get_open_elevation(self, lat, lon):
         base_url = "https://api.open-elevation.com/api/v1/lookup"
         params = {"locations": f"{lat},{lon}"}
         headers = {
             "Accept": "application/json",
-            "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36"
+            "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36",
+            "Cache-Control": "no-cache",
+            "Connection": "keep-alive"
         }
-        # 增加超时时间，避免请求失败
-        response = requests.get(base_url, params=params, headers=headers, timeout=20)
+        # 延长超时时间+关闭连接复用，避免连接池耗尽
+        response = requests.get(
+            base_url, 
+            params=params, 
+            headers=headers, 
+            timeout=30,
+            stream=False,
+            verify=False  # 忽略SSL验证，避免证书问题
+        )
         response.raise_for_status()
         data = response.json()
         if "results" in data and len(data["results"]) > 0:
             elevation = data["results"][0]["elevation"]
             print(f"✅ 成功获取真实海拔：{elevation}m")
             return round(float(elevation), 1)
-        raise Exception("API返回数据格式异常")
+        raise Exception("API返回无海拔数据")
 
     def _get_simulation_elevation(self, lat, lon):
         if 25 <= lat <= 35 and 75 <= lon <= 105:
