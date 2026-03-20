@@ -4,27 +4,17 @@ import pandas as pd
 import numpy as np
 import requests
 import random
-from functools import lru_cache  # 新增：缓存API结果，减少CPU占用
+from functools import lru_cache
 
 # ==========================================
-# 【核心修复1】正确的Flask路径配置（解决TemplateNotFound/500报错）
+# 正确的Flask路径配置
 # ==========================================
-# 获取app.py所在的目录（项目根目录）
 BASE_DIR = os.path.dirname(os.path.abspath(__file__))
-# 模板文件夹：和app.py同级的templates文件夹（必须全小写）
 TEMPLATES_DIR = os.path.join(BASE_DIR, 'templates')
-
-# 初始化Flask应用（核心修复：明确指定模板路径）
 app = Flask(__name__, template_folder=TEMPLATES_DIR)
 
 # ==========================================
-# 配置：API相关（保留你的原有功能）
-# ==========================================
-# 这里的高德Key保留，但实际用Open-Elevation免费API，无需修改
-AMAP_KEY = "44d3e38673dc18b760f544a0d48f8f7f"
-
-# ==========================================
-# 1. 光伏发电量仿真模型（支持高德API真实海拔+随机选点）
+# 1. 光伏发电量仿真模型（优先用真实海拔API）
 # ==========================================
 class PVGenerationModel:
     def __init__(self):
@@ -49,8 +39,9 @@ class PVGenerationModel:
         else:
             raise ValueError("请选择模式：指定经纬度 或 random_point=True")
 
-        self.site_elevation = self._get_amap_real_elevation(self.site_lat, self.site_lon)
-        print(f"🏔️  真实海拔：{self.site_elevation}m")
+        # 【核心修复】优先用Open-Elevation API获取真实海拔
+        self.site_elevation = self._get_real_elevation(self.site_lat, self.site_lon)
+        print(f"🏔️  海拔数据：{self.site_elevation}m")
 
         weather_df = self._get_local_weather_data()
         generation_df = self._calculate_pv_generation(weather_df, float(system_capacity_kw))
@@ -75,36 +66,32 @@ class PVGenerationModel:
         random_lon = round(random.uniform(lon_min, lon_max), 6)
         return random_lat, random_lon
 
-    def _get_amap_real_elevation(self, lat, lon):
-        if AMAP_KEY == "44d3e38673dc18b760f544a0d48f8f7f":
-            print("⚠️ 未配置高德地图Key，使用模拟海拔")
-            return self._get_simulation_elevation(lat, lon)
+    # 【核心修复】直接优先用Open-Elevation API，去掉强制模拟的逻辑
+    def _get_real_elevation(self, lat, lon):
         try:
             return self._get_open_elevation(lat, lon)
         except Exception as e:
-            print(f"⚠️ 高德API调用失败：{str(e)}，使用模拟海拔")
+            print(f"⚠️ 真实海拔API调用失败：{str(e)}，使用模拟海拔")
             return self._get_simulation_elevation(lat, lon)
 
-    # 【核心修复2】给API请求加缓存，相同经纬度不会重复请求，大幅减少CPU占用
+    # 缓存API结果，相同经纬度不重复请求
     @lru_cache(maxsize=100)
     def _get_open_elevation(self, lat, lon):
-        try:
-            base_url = "https://api.open-elevation.com/api/v1/lookup"
-            params = {"locations": f"{lat},{lon}"}
-            headers = {
-                "Accept": "application/json",
-                "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36"
-            }
-            response = requests.get(base_url, params=params, headers=headers, timeout=10)
-            if response.status_code == 200:
-                data = response.json()
-                if "results" in data and len(data["results"]) > 0:
-                    elevation = data["results"][0]["elevation"]
-                    return round(float(elevation), 1)
-            raise Exception("API返回数据异常")
-        except Exception as e:
-            print(f"⚠️ Open-Elevation API调用失败：{str(e)}，使用模拟海拔")
-            return self._get_simulation_elevation(lat, lon)
+        base_url = "https://api.open-elevation.com/api/v1/lookup"
+        params = {"locations": f"{lat},{lon}"}
+        headers = {
+            "Accept": "application/json",
+            "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36"
+        }
+        # 增加超时时间，避免请求失败
+        response = requests.get(base_url, params=params, headers=headers, timeout=20)
+        response.raise_for_status()
+        data = response.json()
+        if "results" in data and len(data["results"]) > 0:
+            elevation = data["results"][0]["elevation"]
+            print(f"✅ 成功获取真实海拔：{elevation}m")
+            return round(float(elevation), 1)
+        raise Exception("API返回数据格式异常")
 
     def _get_simulation_elevation(self, lat, lon):
         if 25 <= lat <= 35 and 75 <= lon <= 105:
@@ -270,13 +257,12 @@ def assess_pv_project():
         })
 
 # ==========================================
-# 4. 启动应用（简化版，适配Render/PythonAnywhere）
+# 4. 启动应用
 # ==========================================
 if __name__ == "__main__":
     print("=" * 60)
     print("🚀 全球光伏资源评估系统 - 后端启动成功")
     print("=" * 60)
-    # 生产环境配置：关闭debug，适配平台端口
     import os
     port = int(os.environ.get('PORT', 5000))
     app.run(debug=False, host='0.0.0.0', port=port, use_reloader=False)
