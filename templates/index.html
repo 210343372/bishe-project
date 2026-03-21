@@ -3,616 +3,517 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>全球光伏资源评估系统</title>
-    <!-- 高德地图安全配置（必须放在API引入之前） -->
-    <script type="text/javascript">
-        window._AMapSecurityConfig = {
-            securityJsCode: '44d3e38673dc18b760f544a0d48f8f7f',
-        }
-    </script>
-    <!-- 高德地图JS API 2.0 （已填入你的Key） -->
+    <title>全球尺度光伏资源与经济性评估系统</title>
+    <!-- 引入Bootstrap -->
+    <link href="https://cdn.bootcdn.net/ajax/libs/twitter-bootstrap/5.3.0/css/bootstrap.min.css" rel="stylesheet">
+    <!-- 引入ECharts（用于画柱状图） -->
+    <script src="https://cdn.bootcdn.net/ajax/libs/echarts/5.4.3/echarts.min.js"></script>
+    <!-- 引入SheetJS（用于导出Excel） -->
+    <script src="https://cdn.bootcdn.net/ajax/libs/xlsx/0.18.5/xlsx.full.min.js"></script>
+    <!-- 引入高德地图API（2.0版本，已修复你的Key） -->
     <script type="text/javascript" src="https://webapi.amap.com/maps?v=2.0&key=44d3e38673dc18b760f544a0d48f8f7f"></script>
+
     <style>
-        * {
-            margin: 0;
-            padding: 0;
-            box-sizing: border-box;
-            font-family: 'Microsoft YaHei', sans-serif;
-        }
-        body {
-            background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
-            min-height: 100vh;
-            padding: 20px;
-        }
-        .container {
-            max-width: 1200px;
-            margin: 0 auto;
-            background: white;
-            border-radius: 16px;
-            box-shadow: 0 20px 60px rgba(0,0,0,0.3);
+        body { padding-top: 50px; background-color: #f8f9fa; }
+        .container { max-width: 1000px; }
+        .result-card { margin-top: 30px; display: none; }
+        .loading { display: none; text-align: center; margin-top: 20px; }
+        /* 地图容器固定宽高，避免渲染失败 */
+        #mapContainer {
+            width: 100% !important;
+            height: 500px !important;
             overflow: hidden;
         }
-        .header {
-            background: linear-gradient(135deg, #1e3a8a 0%, #3b82f6 100%);
-            color: white;
-            padding: 30px;
-            text-align: center;
-        }
-        .header h1 {
-            font-size: 32px;
-            margin-bottom: 10px;
-        }
-        .header p {
-            opacity: 0.9;
-            font-size: 16px;
-        }
-        .content {
-            display: grid;
-            grid-template-columns: 1fr 1fr;
-            gap: 30px;
-            padding: 30px;
-        }
-        @media (max-width: 900px) {
-            .content {
-                grid-template-columns: 1fr;
-            }
-        }
-        .section {
-            background: #f8fafc;
-            padding: 25px;
-            border-radius: 12px;
-        }
-        .section h3 {
-            color: #1e40af;
-            margin-bottom: 20px;
-            font-size: 20px;
-            border-bottom: 2px solid #3b82f6;
-            padding-bottom: 10px;
-        }
-        .form-group {
-            margin-bottom: 18px;
-        }
-        .form-group label {
-            display: block;
-            margin-bottom: 8px;
-            color: #374151;
-            font-weight: 500;
-        }
-        .form-group input {
-            width: 100%;
-            padding: 12px;
-            border: 1px solid #d1d5db;
+        /* 计算原理板块样式优化 */
+        .calc-principle {
+            background-color: #f1f5f9;
+            padding: 15px;
             border-radius: 8px;
-            font-size: 15px;
-            transition: border-color 0.3s;
+            margin-top: 10px;
         }
-        .form-group input:focus {
-            outline: none;
-            border-color: #3b82f6;
-        }
-        .btn-group {
-            display: flex;
-            gap: 12px;
-            margin-top: 25px;
-        }
-        .btn {
-            flex: 1;
-            padding: 14px;
-            border: none;
-            border-radius: 8px;
-            font-size: 16px;
-            font-weight: 600;
-            cursor: pointer;
-            transition: transform 0.2s, box-shadow 0.2s;
-        }
-        .btn:hover {
-            transform: translateY(-2px);
-            box-shadow: 0 4px 12px rgba(0,0,0,0.15);
-        }
-        .btn-primary {
-            background: linear-gradient(135deg, #2563eb 0%, #1d4ed8 100%);
-            color: white;
-        }
-        .btn-success {
-            background: linear-gradient(135deg, #059669 0%, #047857 100%);
-            color: white;
-        }
-        .btn-warning {
-            background: linear-gradient(135deg, #d97706 0%, #b45309 100%);
-            color: white;
-        }
-        /* 高德地图容器样式 */
-        #map {
-            width: 100%;
-            height: 320px;
-            border-radius: 8px;
-            margin-bottom: 10px;
-        }
-        .map-tip {
-            text-align: center;
-            color: #6b7280;
-            font-size: 13px;
-            margin-bottom: 15px;
-        }
-        .results {
-            display: none;
-            margin-top: 20px;
-        }
-        .result-card {
-            background: white;
-            padding: 20px;
-            border-radius: 10px;
-            margin-bottom: 15px;
-            box-shadow: 0 2px 8px rgba(0,0,0,0.08);
-        }
-        .result-card h4 {
-            color: #1e40af;
-            margin-bottom: 15px;
-        }
-        .result-grid {
-            display: grid;
-            grid-template-columns: repeat(2, 1fr);
-            gap: 12px;
-        }
-        .result-item {
-            background: #f1f5f9;
-            padding: 12px;
-            border-radius: 6px;
-        }
-        .result-item .label {
-            font-size: 13px;
-            color: #6b7280;
-            margin-bottom: 4px;
-        }
-        .result-item .value {
-            font-size: 18px;
-            font-weight: 700;
-            color: #1e293b;
-        }
-        .loading {
-            display: none;
-            text-align: center;
-            padding: 30px;
-            color: #3b82f6;
-            font-size: 18px;
-        }
-        .loading::after {
-            content: '';
-            display: inline-block;
-            width: 20px;
-            height: 20px;
-            border: 3px solid #3b82f6;
-            border-top-color: transparent;
-            border-radius: 50%;
-            animation: spin 0.8s linear infinite;
-            margin-left: 10px;
-            vertical-align: middle;
-        }
-        @keyframes spin {
-            to { transform: rotate(360deg); }
+        .calc-formula {
+            font-family: "Courier New", monospace;
+            background-color: #eef2ff;
+            padding: 8px;
+            border-radius: 4px;
+            margin: 5px 0;
         }
     </style>
 </head>
 <body>
-    <!-- 计算原理按钮（悬浮右上角） -->
-    <button id="showPrincipleBtn" style="
-        position: fixed;
-        top: 20px;
-        right: 20px;
-        padding: 12px 24px;
-        background: linear-gradient(135deg, #2563eb 0%, #1d4ed8 100%);
-        color: white;
-        border: none;
-        border-radius: 10px;
-        cursor: pointer;
-        font-size: 16px;
-        font-weight: 600;
-        z-index: 1000;
-        box-shadow: 0 4px 15px rgba(37, 99, 235, 0.4);
-        transition: transform 0.2s;
-    ">
-        📖 计算原理
-    </button>
-
     <div class="container">
-        <div class="header">
-            <h1>🌞 全球光伏资源评估系统</h1>
-            <p>基于真实海拔数据的光伏发电量仿真与全生命周期经济性评估</p>
+        <!-- 标题 -->
+        <div class="text-center mb-5">
+            <h2 class="fw-bold">全球尺度光伏资源与经济性评估系统</h2>
+            <p class="text-muted">本科毕业设计演示系统</p>
         </div>
 
-        <div class="content">
-            <!-- 左侧：输入与选点 -->
-            <div class="section">
-                <h3>📍 项目配置</h3>
-                
-                <div class="form-group">
-                    <label>项目名称</label>
-                    <input type="text" id="projectName" value="光伏示范项目">
-                </div>
-
-                <div class="form-group">
-                    <label>装机容量 (kW)</label>
-                    <input type="number" id="capacity" value="1000" step="100">
-                </div>
-
-                <!-- 高德地图容器 -->
-                <div id="map"></div>
-                <p class="map-tip">💡 点击地图即可选择项目地点，也可点击「随机选点」自动生成</p>
-
-                <div class="form-group">
-                    <label>选点经纬度 (自动填充)</label>
-                    <input type="text" id="latitude" placeholder="纬度" readonly>
-                    <input type="text" id="longitude" placeholder="经度" readonly style="margin-top: 8px;">
-                </div>
-
-                <div class="btn-group">
-                    <button class="btn btn-warning" id="randomPointBtn">🎲 随机选点</button>
-                    <button class="btn btn-success" id="assessBtn">🚀 开始评估</button>
-                </div>
-
-                <div class="loading" id="loading">正在评估中，请稍候</div>
+        <!-- 输入表单 -->
+        <div class="card shadow-sm">
+            <div class="card-header bg-primary text-white">
+                <h5 class="mb-0">项目参数输入</h5>
             </div>
+            <div class="card-body">
+                <div class="row g-3">
+                    <div class="col-md-4">
+                        <label for="latitude" class="form-label">项目纬度 (°)</label>
+                        <input type="number" step="0.01" class="form-control" id="latitude" value="39.9" placeholder="例如：39.9（北京）">
+                    </div>
+                    <div class="col-md-4">
+                        <label for="longitude" class="form-label">项目经度 (°)</label>
+                        <input type="number" step="0.01" class="form-control" id="longitude" value="116.4" placeholder="例如：116.4（北京）">
+                    </div>
+                    <div class="col-md-4 d-flex align-items-end">
+                        <!-- 地图选点按钮 -->
+                        <button id="mapSelectBtn" class="btn btn-outline-primary w-100" type="button" data-bs-toggle="modal" data-bs-target="#mapModal">
+                            📍 地图选点
+                        </button>
+                    </div>
+                    <div class="col-md-4">
+                        <label for="capacity" class="form-label">系统装机容量 (kW)</label>
+                        <input type="number" class="form-control" id="capacity" value="1000" placeholder="例如：1000">
+                    </div>
+                    <div class="col-md-8">
+                        <label for="projectName" class="form-label">项目名称（可选）</label>
+                        <input type="text" class="form-control" id="projectName" value="北京1MW分布式光伏项目" placeholder="请输入项目名称">
+                    </div>
+                </div>
 
-            <!-- 右侧：结果展示 -->
-            <div class="section">
-                <h3>📊 评估结果</h3>
-                <div id="results" class="results">
-                    <div class="result-card">
-                        <h4>📍 站点信息</h4>
-                        <div class="result-grid">
-                            <div class="result-item">
-                                <div class="label">纬度</div>
-                                <div class="value" id="resLat">-</div>
+                <!-- 高级参数自定义折叠面板 -->
+                <div class="accordion mt-4" id="paramAccordion">
+                    <div class="accordion-item">
+                        <h2 class="accordion-header" id="headingOne">
+                            <button class="accordion-button collapsed" type="button" data-bs-toggle="collapse" data-bs-target="#collapseOne" aria-expanded="false" aria-controls="collapseOne">
+                                高级参数自定义（可选，默认使用行业标准值）
+                            </button>
+                        </h2>
+                        <div id="collapseOne" class="accordion-collapse collapse" aria-labelledby="headingOne" data-bs-parent="#paramAccordion">
+                            <div class="accordion-body">
+                                <div class="row g-3">
+                                    <div class="col-md-4">
+                                        <label for="gridPrice" class="form-label">上网电价 (元/kWh)</label>
+                                        <input type="number" step="0.01" class="form-control" id="gridPrice" value="0.55">
+                                    </div>
+                                    <div class="col-md-4">
+                                        <label for="investmentPerKw" class="form-label">单位千瓦初始投资 (元/kW)</label>
+                                        <input type="number" class="form-control" id="investmentPerKw" value="3500">
+                                    </div>
+                                    <div class="col-md-4">
+                                        <label for="operationCostRate" class="form-label">年运维成本比例 (%)</label>
+                                        <input type="number" step="0.1" class="form-control" id="operationCostRate" value="1.5">
+                                    </div>
+                                    <div class="col-md-4">
+                                        <label for="moduleEfficiency" class="form-label">组件效率 (%)</label>
+                                        <input type="number" step="0.1" class="form-control" id="moduleEfficiency" value="18">
+                                    </div>
+                                    <div class="col-md-4">
+                                        <label for="performanceRatio" class="form-label">系统性能比PR (%)</label>
+                                        <input type="number" step="0.1" class="form-control" id="performanceRatio" value="80">
+                                    </div>
+                                    <div class="col-md-4">
+                                        <label for="discountRate" class="form-label">折现率 (%)</label>
+                                        <input type="number" step="0.1" class="form-control" id="discountRate" value="6">
+                                    </div>
+                                </div>
                             </div>
-                            <div class="result-item">
-                                <div class="label">经度</div>
-                                <div class="value" id="resLon">-</div>
+                        </div>
+                    </div>
+                </div>
+
+                <div class="d-grid gap-2 mt-4">
+                    <button id="assessBtn" class="btn btn-primary btn-lg">开始评估</button>
+                    <button id="randomPointBtn" class="btn btn-secondary btn-lg">随机选点</button>
+                </div>
+            </div>
+        </div>
+
+        <!-- 加载提示 -->
+        <div class="loading" id="loading">
+            <div class="spinner-border text-primary" role="status">
+                <span class="visually-hidden">评估中...</span>
+            </div>
+            <p class="mt-2 text-muted">正在进行光伏资源评估，请稍候...</p>
+        </div>
+
+        <!-- 评估结果展示 -->
+        <div class="result-card" id="resultCard">
+            <div class="card shadow-sm">
+                <div class="card-header bg-success text-white d-flex justify-content-between align-items-center">
+                    <h5 class="mb-0">评估结果</h5>
+                    <!-- 导出Excel按钮 -->
+                    <button id="exportBtn" class="btn btn-light btn-sm">📥 导出Excel</button>
+                </div>
+                <div class="card-body">
+                    <!-- 项目基本信息 -->
+                    <h6 class="fw-bold mb-3">一、项目基本信息</h6>
+                    <div class="row mb-4">
+                        <div class="col-md-4"><strong>项目名称：</strong><span id="resProjectName"></span></div>
+                        <div class="col-md-3"><strong>目标经纬度：</strong><span id="resLatLon"></span></div>
+                        <div class="col-md-3"><strong>匹配网格点：</strong><span id="resMatchedLatLon"></span></div>
+                        <div class="col-md-2"><strong>海拔高度：</strong><span id="resElevation"></span> m</div>
+                    </div>
+
+                    <!-- 核心评估指标 -->
+                    <h6 class="fw-bold mb-3">二、核心评估指标</h6>
+                    <div class="row mb-4">
+                        <div class="col-md-3">
+                            <div class="card bg-light text-center">
+                                <div class="card-body">
+                                    <h5 class="card-title text-primary" id="resUnitGen"></h5>
+                                    <p class="card-text text-muted small">单位kW年发电量 (kWh/kW)</p>
+                                </div>
                             </div>
-                            <div class="result-item">
-                                <div class="label">真实海拔</div>
-                                <div class="value" id="resElevation">- m</div>
+                        </div>
+                        <div class="col-md-3">
+                            <div class="card bg-light text-center">
+                                <div class="card-body">
+                                    <h5 class="card-title text-success" id="resLCOE"></h5>
+                                    <p class="card-text text-muted small">平准化度电成本LCOE (元/kWh)</p>
+                                </div>
                             </div>
-                            <div class="result-item">
-                                <div class="label">装机容量</div>
-                                <div class="value" id="resCapacity">- kW</div>
+                        </div>
+                        <div class="col-md-3">
+                            <div class="card bg-light text-center">
+                                <div class="card-body">
+                                    <h5 class="card-title text-warning" id="resPayback"></h5>
+                                    <p class="card-text text-muted small">静态投资回收期 (年)</p>
+                                </div>
+                            </div>
+                        </div>
+                        <div class="col-md-3">
+                            <div class="card bg-light text-center">
+                                <div class="card-body">
+                                    <h5 class="card-title text-info" id="resIRR"></h5>
+                                    <p class="card-text text-muted small">内部收益率IRR (%)</p>
+                                </div>
                             </div>
                         </div>
                     </div>
 
-                    <div class="result-card">
-                        <h4>⚡ 发电量评估</h4>
-                        <div class="result-grid">
-                            <div class="result-item">
-                                <div class="label">单位容量年发电量</div>
-                                <div class="value" id="resUnitGen">- kWh/kW</div>
-                            </div>
-                            <div class="result-item">
-                                <div class="label">首年总发电量</div>
-                                <div class="value" id="resFirstYear">- 万kWh</div>
-                            </div>
-                        </div>
+                    <!-- 经济指标详情 -->
+                    <h6 class="fw-bold mb-3">三、经济指标详情</h6>
+                    <div class="row mb-4">
+                        <div class="col-md-4"><strong>系统装机容量：</strong><span id="resCapacity"></span> kW</div>
+                        <div class="col-md-4"><strong>项目初始投资：</strong><span id="resInvestment"></span> 万元</div>
+                        <div class="col-md-4"><strong>首年总发电量：</strong><span id="resFirstYearGen"></span> 万kWh</div>
+                        <div class="col-md-4"><strong>年净收益：</strong><span id="resAnnualIncome"></span> 万元</div>
                     </div>
 
-                    <div class="result-card">
-                        <h4>💰 经济性评估</h4>
-                        <div class="result-grid">
-                            <div class="result-item">
-                                <div class="label">初始投资</div>
-                                <div class="value" id="resInvest">- 万元</div>
+                    <!-- 月度发电量柱状图 -->
+                    <h6 class="fw-bold mb-3">四、月度发电量分布</h6>
+                    <div id="monthlyGenerationChart" style="width: 100%; height: 400px;"></div>
+
+                    <!-- ========== 新增：计算原理板块 ========== -->
+                    <h6 class="fw-bold mb-3 mt-5">五、计算原理</h6>
+                    <div class="calc-principle mb-4">
+                        <div class="mb-3">
+                            <strong>1. 年发电量计算</strong>
+                            <p class="mb-1">基于辐照数据、组件效率和系统性能比计算：</p>
+                            <div class="calc-formula">
+                                首年总发电量(kWh) = 装机容量(kW) × 单位kW年发电量(kWh/kW) × 系统性能比(PR)
                             </div>
-                            <div class="result-item">
-                                <div class="label">度电成本 (LCOE)</div>
-                                <div class="value" id="resLCOE">- 元/kWh</div>
-                            </div>
-                            <div class="result-item">
-                                <div class="label">投资回收期</div>
-                                <div class="value" id="resPayback">- 年</div>
-                            </div>
-                            <div class="result-item">
-                                <div class="label">内部收益率 (IRR)</div>
-                                <div class="value" id="resIRR">- %</div>
+                            <p class="mb-1 small text-muted">单位kW年发电量由经纬度匹配的全球辐照数据库插值计算得出</p>
+                        </div>
+                        <div class="mb-3">
+                            <strong>2. 初始投资计算</strong>
+                            <div class="calc-formula">
+                                初始投资(万元) = 装机容量(kW) × 单位千瓦初始投资(元/kW) ÷ 10000
                             </div>
                         </div>
+                        <div class="mb-3">
+                            <strong>3. 年运维成本计算</strong>
+                            <div class="calc-formula">
+                                年运维成本(万元) = 初始投资(万元) × 年运维成本比例(%) ÷ 100
+                            </div>
+                        </div>
+                        <div class="mb-3">
+                            <strong>4. 年净收益计算</strong>
+                            <div class="calc-formula">
+                                年净收益(万元) = (首年总发电量(kWh) × 上网电价(元/kWh) ÷ 10000) - 年运维成本(万元)
+                            </div>
+                        </div>
+                        <div class="mb-3">
+                            <strong>5. 平准化度电成本(LCOE)计算</strong>
+                            <div class="calc-formula">
+                                LCOE(元/kWh) = 初始投资×折现率×(1+折现率)ⁿ ÷ [(1+折现率)ⁿ - 1] ÷ 年发电量 + 单位运维成本
+                            </div>
+                            <p class="mb-1 small text-muted">n为光伏项目生命周期（默认25年），单位运维成本=年运维成本÷年发电量</p>
+                        </div>
+                        <div class="mb-3">
+                            <strong>6. 静态投资回收期计算</strong>
+                            <div class="calc-formula">
+                                静态回收期(年) = 初始投资(万元) ÷ 年净收益(万元)
+                            </div>
+                        </div>
+                        <div class="mb-3">
+                            <strong>7. 内部收益率(IRR)计算</strong>
+                            <div class="calc-formula">
+                                Σ(年净现金流量 ÷ (1+IRR)ᵗ) = 0 （t=0到n年，通过牛顿迭代法求解）
+                            </div>
+                            <p class="mb-1 small text-muted">初始投资为第0年负现金流，后续每年净收益为正现金流，n=25年</p>
+                        </div>
                     </div>
+                    <!-- ========== 计算原理板块结束 ========== -->
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <!-- 地图选点弹窗 -->
+    <div class="modal fade" id="mapModal" tabindex="-1" aria-labelledby="mapModalLabel" aria-hidden="true">
+        <div class="modal-dialog modal-lg">
+            <div class="modal-content">
+                <div class="modal-header">
+                    <h5 class="modal-title" id="mapModalLabel">📍 地图选点</h5>
+                    <button type="button" class="btn-close" data-bs-dismiss="modal" aria-label="Close"></button>
+                </div>
+                <div class="modal-body">
+                    <!-- 地图容器 -->
+                    <div id="mapContainer"></div>
+                    <p class="text-muted small mt-2 mb-0">点击地图选择项目地点，点击「确认选点」自动填充经纬度</p>
+                </div>
+                <div class="modal-footer">
+                    <button type="button" class="btn btn-secondary" data-bs-dismiss="modal">取消</button>
+                    <button type="button" class="btn btn-primary" id="confirmMapBtn">确认选点</button>
                 </div>
             </div>
         </div>
     </div>
 
-    <!-- 计算原理模态框 -->
-    <div id="principleModal" style="
-        display: none;
-        position: fixed;
-        top: 0;
-        left: 0;
-        width: 100%;
-        height: 100%;
-        background: rgba(0,0,0,0.6);
-        z-index: 2000;
-        justify-content: center;
-        align-items: center;
-        padding: 20px;
-    ">
-        <div style="
-            background: white;
-            width: 100%;
-            max-width: 950px;
-            max-height: 88vh;
-            border-radius: 16px;
-            padding: 35px;
-            overflow-y: auto;
-            box-shadow: 0 20px 60px rgba(0,0,0,0.3);
-            position: relative;
-        ">
-            <button id="closeModalBtn" style="
-                position: absolute;
-                top: 15px;
-                right: 20px;
-                font-size: 32px;
-                background: none;
-                border: none;
-                cursor: pointer;
-                color: #6b7280;
-                transition: color 0.2s;
-            ">×</button>
-
-            <h2 style="color: #1e40af; margin-top: 0; text-align: center; font-size: 28px;">📐 全球光伏资源评估系统 - 计算原理</h2>
-            <hr style="border: 1px solid #e5e7eb; margin: 25px 0;">
-
-            <h3 style="color: #059669; font-size: 20px;">1. 光伏发电量仿真模型</h3>
-            <p style="line-height: 1.9; color: #374151; font-size: 16px;">
-                本系统基于经纬度、真实海拔数据，结合气象学经验模型计算光伏发电量，核心逻辑如下：
-            </p>
-
-            <h4 style="color: #4b5563; margin-top: 22px; font-size: 17px;">1.1 太阳总辐射量 (GHI) 计算</h4>
-            <p style="line-height: 1.9; color: #374151;">
-                基于纬度和海拔修正基础辐射量（纬度越高辐射越低，海拔越高辐射越高）：
-            </p>
-            <div style="
-                background: #f3f4f6;
-                padding: 18px;
-                border-radius: 10px;
-                margin: 12px 0;
-                font-family: 'Courier New', monospace;
-                text-align: center;
-                font-size: 15px;
-                line-height: 2;
-            ">
-                基础GHI = 1800 - (|纬度| / 90) × 800<br>
-                海拔修正 = (海拔 / 1000) × 0.05 × 基础GHI<br>
-                <strong>年总GHI = 基础GHI + 海拔修正</strong>
-            </div>
-            <p style="line-height: 1.9; color: #374151;">
-                其中，海拔修正系数取0.05/1000m（即海拔每升高1000米，辐射量增加5%）。
-            </p>
-
-            <h4 style="color: #4b5563; margin-top: 22px; font-size: 17px;">1.2 组件温度与温度损失</h4>
-            <p style="line-height: 1.9; color: #374151;">
-                光伏组件温度随环境温度和辐射量变化，进而影响发电效率：
-            </p>
-            <div style="
-                background: #f3f4f6;
-                padding: 18px;
-                border-radius: 10px;
-                margin: 12px 0;
-                font-family: 'Courier New', monospace;
-                text-align: center;
-                font-size: 15px;
-                line-height: 2;
-            ">
-                组件温度 = 环境温度 + (NOCT - 20) × (GHI / 800)<br>
-                温度损失系数 = 1 - 0.004 × (组件温度 - 25)
-            </div>
-            <p style="line-height: 1.9; color: #374151;">
-                其中，NOCT（标称工作电池温度）取45℃，温度损失系数为-0.4%/℃（行业标准值）。
-            </p>
-
-            <h4 style="color: #4b5563; margin-top: 22px; font-size: 17px;">1.3 月度发电量计算</h4>
-            <div style="
-                background: #f3f4f6;
-                padding: 18px;
-                border-radius: 10px;
-                margin: 12px 0;
-                font-family: 'Courier New', monospace;
-                text-align: center;
-                font-size: 15px;
-            ">
-                月度发电量 (kWh) = 月度GHI × 1.1 × 组件效率 × 性能比率 × 温度损失系数 × 系统容量 / 1000
-            </div>
-            <p style="line-height: 1.9; color: #374151;">
-                关键参数取值：组件效率 η=0.18（18%），系统性能比率 PR=0.80（80%），斜面辐射修正系数 1.1。
-            </p>
-
-            <hr style="border: 1px solid #e5e7eb; margin: 35px 0;">
-
-            <h3 style="color: #059669; font-size: 20px;">2. 光伏项目经济性评估模型</h3>
-            <p style="line-height: 1.9; color: #374151; font-size: 16px;">
-                基于全生命周期成本（LCOE）、投资回收期、内部收益率（IRR）评估项目可行性：
-            </p>
-
-            <h4 style="color: #4b5563; margin-top: 22px; font-size: 17px;">2.1 初始投资与年收益</h4>
-            <div style="
-                background: #f3f4f6;
-                padding: 18px;
-                border-radius: 10px;
-                margin: 12px 0;
-                font-family: 'Courier New', monospace;
-                text-align: center;
-                font-size: 15px;
-                line-height: 2;
-            ">
-                初始投资 (万元) = 系统容量 (kW) × 单位投资 (3500元/kW) / 10000<br>
-                年发电收益 (万元) = 年发电量 (kWh) × 上网电价 (0.55元/kWh) / 10000<br>
-                年运维成本 (万元) = 初始投资 × 运维费率 (1.5%)
-            </div>
-
-            <h4 style="color: #4b5563; margin-top: 22px; font-size: 17px;">2.2 核心评估指标</h4>
-            <div style="
-                background: #f3f4f6;
-                padding: 18px;
-                border-radius: 10px;
-                margin: 12px 0;
-                font-family: 'Courier New', monospace;
-                text-align: left;
-                font-size: 15px;
-                line-height: 2.2;
-            ">
-                <strong>1. 投资回收期 (年)</strong> = 初始投资 / (年收益 - 年运维成本)<br>
-                <strong>2. 度电成本 (LCOE, 元/kWh)</strong> = 全生命周期总成本 / 全生命周期总发电量<br>
-                <strong>3. 内部收益率 (IRR, %)</strong> = (年净收益 / 初始投资) × 100
-            </div>
-            <p style="line-height: 1.9; color: #374151;">
-                其中，项目寿命按25年计算，组件效率年衰减率为0.5%。
-            </p>
-
-            <hr style="border: 1px solid #e5e7eb; margin: 35px 0;">
-
-            <h3 style="color: #059669; font-size: 20px;">3. 数据来源</h3>
-            <ul style="line-height: 2.2; color: #374151; font-size: 16px; padding-left: 20px;">
-                <li>地图服务：高德地图JS API 2.0</li>
-                <li>真实海拔数据：Open-Elevation 免费API（基于SRTM90全球地形数据，90米分辨率）</li>
-                <li>气象模型：基于纬度-海拔的经验辐射模型（参考光伏行业通用设计规范）</li>
-                <li>经济参数：参考国内2025-2026年光伏电站平均建设与运维成本</li>
-            </ul>
-        </div>
-    </div>
-
+    <!-- 引入Bootstrap JS和jQuery -->
+    <script src="https://cdn.bootcdn.net/ajax/libs/jquery/3.6.0/jquery.min.js"></script>
+    <script src="https://cdn.bootcdn.net/ajax/libs/twitter-bootstrap/5.3.0/js/bootstrap.bundle.min.js"></script>
     <script>
         // 全局变量
+        let currentResult = null;
         let map = null;
-        let marker = null;
-        // 页面元素
-        const randomPointBtn = document.getElementById('randomPointBtn');
-        const assessBtn = document.getElementById('assessBtn');
-        const latitudeInput = document.getElementById('latitude');
-        const longitudeInput = document.getElementById('longitude');
-        const loading = document.getElementById('loading');
-        const results = document.getElementById('results');
-        const showBtn = document.getElementById('showPrincipleBtn');
-        const modal = document.getElementById('principleModal');
-        const closeBtn = document.getElementById('closeModalBtn');
+        let selectedMarker = null;
+        let selectedLngLat = null;
 
-        // 页面加载完成后初始化高德地图
-        window.onload = function() {
-            // 初始化地图，默认中心点为中国北京，缩放级别5
-            map = new AMap.Map('map', {
-                zoom: 5,
-                center: [116.4074, 39.9042], // 北京中心点
-                resizeEnable: true
+        // 评估按钮逻辑
+        $('#assessBtn').click(function() {
+            const data = {
+                latitude: $('#latitude').val(),
+                longitude: $('#longitude').val(),
+                capacity: $('#capacity').val(),
+                projectName: $('#projectName').val(),
+                gridPrice: $('#gridPrice').val(),
+                investmentPerKw: $('#investmentPerKw').val(),
+                operationCostRate: $('#operationCostRate').val() / 100,
+                moduleEfficiency: $('#moduleEfficiency').val() / 100,
+                performanceRatio: $('#performanceRatio').val() / 100,
+                discountRate: $('#discountRate').val() / 100
+            };
+
+            $('#loading').show();
+            $('#resultCard').hide();
+            $('#assessBtn').prop('disabled', true);
+
+            $.ajax({
+                url: '/api/assess',
+                type: 'POST',
+                contentType: 'application/json',
+                data: JSON.stringify(data),
+                success: function(res) {
+                    if (res.success) {
+                        currentResult = res.data;
+                        const d = res.data;
+
+                        // 填充结果（修复undefined问题，增加兜底容错）
+                        $('#resProjectName').text(d.projectName);
+                        // 输入经纬度
+                        const inputLat = Number(d.latitude).toFixed(4);
+                        const inputLon = Number(d.longitude).toFixed(4);
+                        $('#resLatLon').text(inputLat + '°N, ' + inputLon + '°E');
+                        // 匹配经纬度：优先用返回的matched值，兜底用输入值，避免undefined
+                        const matchedLat = d.matchedLat ? Number(d.matchedLat).toFixed(4) : inputLat;
+                        const matchedLon = d.matchedLon ? Number(d.matchedLon).toFixed(4) : inputLon;
+                        $('#resMatchedLatLon').text(matchedLat + '°N, ' + matchedLon + '°E');
+                        // 海拔高度
+                        $('#resElevation').text(Number(d.elevation).toFixed(2));
+                        $('#resCapacity').text(Number(d.capacity).toFixed(0));
+                        $('#resUnitGen').text(Number(d.unitGeneration).toFixed(2));
+                        $('#resInvestment').text(Number(d.initialInvestment).toFixed(2));
+                        $('#resFirstYearGen').text(Number(d.firstYearGeneration).toFixed(2));
+                        $('#resLCOE').text(Number(d.LCOE).toFixed(2));
+                        $('#resPayback').text(Number(d.paybackPeriod).toFixed(2));
+                        $('#resIRR').text(Number(d.IRR).toFixed(2) + '%');
+                        $('#resAnnualIncome').text(Number(d.annualNetIncome).toFixed(2));
+
+                        // 显示结果
+                        $('#resultCard').show();
+
+                        // 画柱状图
+                        const monthlyData = d.monthlyGeneration;
+                        const months = ['1月', '2月', '3月', '4月', '5月', '6月', '7月', '8月', '9月', '10月', '11月', '12月'];
+                        const generationValues = monthlyData.map(item => item.monthly_generation_kwh);
+
+                        const chartDom = document.getElementById('monthlyGenerationChart');
+                        const myChart = echarts.init(chartDom);
+                        const option = {
+                            title: { text: '月度发电量分布', left: 'center' },
+                            tooltip: { trigger: 'axis', formatter: '{b}<br/>发电量：{c} kWh' },
+                            xAxis: { type: 'category', data: months },
+                            yAxis: { type: 'value', name: '发电量 (kWh)' },
+                            series: [{
+                                data: generationValues,
+                                type: 'bar',
+                                itemStyle: { color: '#5470c6' },
+                                label: { show: true, position: 'top' }
+                            }]
+                        };
+                        myChart.setOption(option);
+                        window.addEventListener('resize', function() { myChart.resize(); });
+                    } else {
+                        alert('评估失败：' + res.message);
+                    }
+                },
+                error: function() {
+                    alert('网络错误，请检查后端是否启动');
+                },
+                complete: function() {
+                    $('#loading').hide();
+                    $('#assessBtn').prop('disabled', false);
+                }
             });
-
-            // 初始化标记点
-            marker = new AMap.Marker({
-                position: [116.4074, 39.9042],
-                map: map
-            });
-
-            // 地图点击事件：点击选点
-            map.on('click', function(e) {
-                const lng = e.lnglat.getLng().toFixed(6);
-                const lat = e.lnglat.getLat().toFixed(6);
-                // 填充输入框
-                longitudeInput.value = lng;
-                latitudeInput.value = lat;
-                // 移动标记点
-                marker.setPosition([lng, lat]);
-                // 地图中心点移动到选点
-                map.setCenter([lng, lat]);
-            });
-        };
-
-        // 随机选点逻辑（同步更新地图）
-        randomPointBtn.addEventListener('click', () => {
-            const landRegions = [
-                [20.0, 50.0, 100.0, 140.0],
-                [25.0, 40.0, 70.0, 100.0],
-                [35.0, 60.0, -10.0, 30.0],
-                [20.0, 40.0, -10.0, 40.0],
-                [15.0, 50.0, -130.0, -60.0],
-                [-35.0, 5.0, -80.0, -30.0],
-                [-40.0, -10.0, 110.0, 155.0],
-                [0.0, 40.0, 10.0, 50.0]
-            ];
-            const region = landRegions[Math.floor(Math.random() * landRegions.length)];
-            const lat = (Math.random() * (region[1] - region[0]) + region[0]).toFixed(6);
-            const lon = (Math.random() * (region[3] - region[2]) + region[2]).toFixed(6);
-            // 填充输入框
-            latitudeInput.value = lat;
-            longitudeInput.value = lon;
-            // 更新地图
-            if (map && marker) {
-                marker.setPosition([lon, lat]);
-                map.setCenter([lon, lat]);
-                map.setZoom(8);
-            }
         });
 
-        // 开始评估逻辑
-        assessBtn.addEventListener('click', async () => {
-            const capacity = document.getElementById('capacity').value;
-            const projectName = document.getElementById('projectName').value;
-            const lat = latitudeInput.value;
-            const lon = longitudeInput.value;
-
-            if (!lat || !lon) {
-                alert('请先选择选点（点击地图选点 或 点击「随机选点」）');
+        // 导出Excel逻辑
+        $('#exportBtn').click(function() {
+            if (!currentResult) {
+                alert('请先进行评估！');
                 return;
             }
+            const d = currentResult;
 
-            // 显示加载，隐藏结果
-            loading.style.display = 'block';
-            results.style.display = 'none';
+            const coreData = [
+                ['项目名称', d.projectName],
+                ['目标经纬度', d.latitude + '°N, ' + d.longitude + '°E'],
+                ['匹配网格点', d.matchedLat + '°N, ' + d.matchedLon + '°E'],
+                ['海拔高度(m)', Number(d.elevation).toFixed(2)],
+                ['系统装机容量(kW)', Number(d.capacity).toFixed(0)],
+                ['单位kW年发电量(kWh/kW)', Number(d.unitGeneration).toFixed(2)],
+                ['项目初始投资(万元)', Number(d.initialInvestment).toFixed(2)],
+                ['首年总发电量(万kWh)', Number(d.firstYearGeneration).toFixed(2)],
+                ['平准化度电成本LCOE(元/kWh)', Number(d.LCOE).toFixed(2)],
+                ['静态投资回收期(年)', Number(d.paybackPeriod).toFixed(2)],
+                ['内部收益率IRR(%)', Number(d.IRR).toFixed(2)],
+                ['年净收益(万元)', Number(d.annualNetIncome).toFixed(2)]
+            ];
 
-            try {
-                const response = await fetch('/api/assess', {
-                    method: 'POST',
-                    headers: { 'Content-Type': 'application/json' },
-                    body: JSON.stringify({
-                        capacity: capacity,
-                        projectName: projectName,
-                        latitude: lat,
-                        longitude: lon,
-                        randomPoint: false
-                    })
-                });
+            const monthlyData = d.monthlyGeneration.map(item => ({
+                '月份': item.month + '月',
+                '月度发电量(kWh)': Number(item.monthly_generation_kwh).toFixed(2),
+                '月总辐射(kWh/m²)': item.GHI ? Number(item.GHI).toFixed(2) : '-',
+                '月平均温度(℃)': item.temperature ? Number(item.temperature).toFixed(2) : '-'
+            }));
 
-                const result = await response.json();
-                loading.style.display = 'none';
+            const wb = XLSX.utils.book_new();
+            const ws1 = XLSX.utils.aoa_to_sheet(coreData);
+            const ws2 = XLSX.utils.json_to_sheet(monthlyData);
 
-                if (result.success) {
-                    const data = result.data;
-                    // 填充结果
-                    document.getElementById('resLat').textContent = data.latitude.toFixed(4) + '°N';
-                    document.getElementById('resLon').textContent = data.longitude.toFixed(4) + '°E';
-                    document.getElementById('resElevation').textContent = data.elevation.toFixed(1) + ' m';
-                    document.getElementById('resCapacity').textContent = data.capacity.toFixed(0) + ' kW';
-                    document.getElementById('resUnitGen').textContent = data.unitGeneration.toFixed(2) + ' kWh/kW';
-                    document.getElementById('resFirstYear').textContent = data.firstYearGeneration.toFixed(2) + ' 万kWh';
-                    document.getElementById('resInvest').textContent = data.initialInvestment.toFixed(2) + ' 万元';
-                    document.getElementById('resLCOE').textContent = data.LCOE.toFixed(4) + ' 元/kWh';
-                    document.getElementById('resPayback').textContent = data.paybackPeriod.toFixed(2) + ' 年';
-                    document.getElementById('resIRR').textContent = data.IRR.toFixed(2) + ' %';
-                    results.style.display = 'block';
-                } else {
-                    alert('评估失败：' + result.message);
+            ws1['!cols'] = [{wch: 30}, {wch: 30}];
+            ws2['!cols'] = [{wch: 10}, {wch: 20}, {wch: 20}, {wch: 20}];
+
+            XLSX.utils.book_append_sheet(wb, ws1, '核心评估指标');
+            XLSX.utils.book_append_sheet(wb, ws2, '月度发电量详情');
+
+            XLSX.writeFile(wb, d.projectName + '_光伏项目评估结果.xlsx');
+        });
+
+        // 【核心修复】高德地图2.0版本正确写法
+        $('#mapModal').on('shown.bs.modal', function () {
+            setTimeout(function() {
+                if (!map) {
+                    try {
+                        // 初始化地图（简化版，先确保地图能显示）
+                        map = new AMap.Map('mapContainer', {
+                            zoom: 5,
+                            center: [116.4, 39.9],
+                            resizeEnable: true
+                        });
+
+                        // 【关键修复】高德2.0版本控件异步加载
+                        AMap.plugin(['AMap.Scale', 'AMap.ToolBar'], function() {
+                            // 添加比例尺控件
+                            map.addControl(new AMap.Scale());
+                            // 添加工具条控件
+                            map.addControl(new AMap.ToolBar({
+                                position: 'RB' // 右下角显示
+                            }));
+                        });
+
+                        console.log("地图初始化成功");
+
+                        // 点击地图选点
+                        map.on('click', function(e) {
+                            const lng = e.lnglat.getLng();
+                            const lat = e.lnglat.getLat();
+                            selectedLngLat = [lng, lat];
+
+                            if (selectedMarker) {
+                                selectedMarker.setPosition([lng, lat]);
+                            } else {
+                                selectedMarker = new AMap.Marker({
+                                    position: [lng, lat],
+                                    title: '项目地点',
+                                    icon: new AMap.Icon({
+                                        size: new AMap.Size(25, 34),
+                                        image: 'https://a.amap.com/jsapi_demos/static/demo-center/icons/poi-marker-default.png',
+                                        imageSize: new AMap.Size(25, 34)
+                                    })
+                                });
+                                map.add(selectedMarker);
+                            }
+                            map.setZoomAndCenter(10, [lng, lat]);
+                        });
+                    } catch (e) {
+                        console.error("地图初始化失败：", e);
+                        alert("地图初始化失败，请检查：\n1. Key的服务平台是否只勾选了Web端(JS API)\n2. Key是否已生效（等待5分钟）\n3. 网络是否正常");
+                    }
                 }
-            } catch (error) {
-                loading.style.display = 'none';
-                alert('网络错误，请稍后重试：' + error.message);
+                map.resize();
+            }, 300);
+        });
+
+        // 确认选点
+        $('#confirmMapBtn').click(function() {
+            if (selectedLngLat) {
+                $('#longitude').val(selectedLngLat[0].toFixed(4));
+                $('#latitude').val(selectedLngLat[1].toFixed(4));
+                $('#mapModal').modal('hide');
+            } else {
+                alert('请先在地图上点击选择项目地点！');
             }
         });
 
-        // 计算原理模态框交互
-        showBtn.addEventListener('click', () => {
-            modal.style.display = 'flex';
-        });
-        closeBtn.addEventListener('click', () => {
-            modal.style.display = 'none';
-        });
-        modal.addEventListener('click', (e) => {
-            if (e.target === modal) {
-                modal.style.display = 'none';
+        // 关闭弹窗清空标记
+        $('#mapModal').on('hidden.bs.modal', function () {
+            selectedLngLat = null;
+            if (selectedMarker && map) {
+                map.remove(selectedMarker);
+                selectedMarker = null;
             }
+        });
+
+        // 新增：随机选点功能（国内范围）
+        $('#randomPointBtn').click(function() {
+            // 国内纬度范围：20°N - 50°N，经度范围：73°E - 135°E
+            const minLat = 20, maxLat = 50;
+            const minLng = 73, maxLng = 135;
+
+            // 生成随机经纬度（保留4位小数）
+            const randomLat = (Math.random() * (maxLat - minLat) + minLat).toFixed(4);
+            const randomLng = (Math.random() * (maxLng - minLng) + minLng).toFixed(4);
+
+            // 填充到输入框
+            $('#latitude').val(randomLat);
+            $('#longitude').val(randomLng);
+
+            // 自动生成项目名称
+            $('#projectName').val(`随机选址${randomLat}°N-${randomLng}°E光伏项目`);
+
+            alert(`已随机生成国内经纬度：\n纬度：${randomLat}°N\n经度：${randomLng}°E`);
         });
     </script>
 </body>
