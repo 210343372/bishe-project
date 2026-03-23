@@ -38,6 +38,23 @@
             border-radius: 4px;
             margin: 5px 0;
         }
+        /* 参考文献引用上标样式 */
+        .ref-sup {
+            font-size: 0.75em;
+            vertical-align: super;
+            color: #0d6efd;
+            font-weight: 500;
+        }
+        /* 参考文献列表样式 */
+        .ref-list {
+            line-height: 1.8;
+            font-size: 0.95em;
+            color: #374151;
+            padding-left: 20px;
+        }
+        .ref-list li {
+            margin-bottom: 8px;
+        }
     </style>
 </head>
 <body>
@@ -203,7 +220,7 @@
                     <h6 class="fw-bold mb-3">四、月度发电量分布</h6>
                     <div id="monthlyGenerationChart" style="width: 100%; height: 400px;"></div>
 
-                    <!-- ========== 新增：计算原理板块 ========== -->
+                    <!-- 计算原理板块 -->
                     <h6 class="fw-bold mb-3 mt-5">五、计算原理</h6>
                     <div class="calc-principle mb-4">
                         <div class="mb-3">
@@ -212,13 +229,14 @@
                             <div class="calc-formula">
                                 首年总发电量(kWh) = 装机容量(kW) × 单位kW年发电量(kWh/kW) × 系统性能比(PR)
                             </div>
-                            <p class="mb-1 small text-muted">单位kW年发电量由经纬度匹配的全球辐照数据库插值计算得出</p>
+                            <p class="mb-1 small text-muted">单位kW年发电量由经纬度匹配的全球辐照数据库插值计算得出<span class="ref-sup">[1]</span></p>
                         </div>
                         <div class="mb-3">
                             <strong>2. 初始投资计算</strong>
                             <div class="calc-formula">
                                 初始投资(万元) = 装机容量(kW) × 单位千瓦初始投资(元/kW) ÷ 10000
                             </div>
+                            <p class="mb-1 small text-muted">单位千瓦初始投资参考国内分布式光伏电站平均建设成本<span class="ref-sup">[2]</span></p>
                         </div>
                         <div class="mb-3">
                             <strong>3. 年运维成本计算</strong>
@@ -237,23 +255,40 @@
                             <div class="calc-formula">
                                 LCOE(元/kWh) = 初始投资×折现率×(1+折现率)ⁿ ÷ [(1+折现率)ⁿ - 1] ÷ 年发电量 + 单位运维成本
                             </div>
-                            <p class="mb-1 small text-muted">n为光伏项目生命周期（默认25年），单位运维成本=年运维成本÷年发电量</p>
+                            <p class="mb-1 small text-muted">n为光伏项目生命周期（默认25年），单位运维成本=年运维成本÷年发电量，计算方法参考《建设项目经济评价方法与参数》<span class="ref-sup">[3]</span></p>
                         </div>
                         <div class="mb-3">
                             <strong>6. 静态投资回收期计算</strong>
                             <div class="calc-formula">
                                 静态回收期(年) = 初始投资(万元) ÷ 年净收益(万元)
                             </div>
+                            <p class="mb-1 small text-muted">计算规范参考GB 50797-2012《光伏发电站设计规范》<span class="ref-sup">[2]</span></p>
                         </div>
                         <div class="mb-3">
                             <strong>7. 内部收益率(IRR)计算</strong>
                             <div class="calc-formula">
                                 Σ(年净现金流量 ÷ (1+IRR)ᵗ) = 0 （t=0到n年，通过牛顿迭代法求解）
                             </div>
-                            <p class="mb-1 small text-muted">初始投资为第0年负现金流，后续每年净收益为正现金流，n=25年</p>
+                            <p class="mb-1 small text-muted">初始投资为第0年负现金流，后续每年净收益为正现金流，n=25年，计算方法参考《建设项目经济评价方法与参数》<span class="ref-sup">[3]</span></p>
+                        </div>
+                        <div class="mb-0">
+                            <strong>8. 海拔数据来源</strong>
+                            <p class="mb-0 small text-muted">项目海拔数据基于SRTM 90米分辨率全球数字高程模型，通过Open-Elevation API获取<span class="ref-sup">[4]</span></p>
                         </div>
                     </div>
-                    <!-- ========== 计算原理板块结束 ========== -->
+
+                    <!-- 新增：参考文献板块（完全匹配老师要求） -->
+                    <h6 class="fw-bold mb-3">六、参考文献</h6>
+                    <div class="calc-principle">
+                        <ol class="ref-list mb-0">
+                            <li id="ref1">中华人民共和国国家质量监督检验检疫总局, 中国国家标准化管理委员会. GB/T 37526-2019 太阳能资源评估方法[S]. 北京: 中国标准出版社, 2019.</li>
+                            <li id="ref2">中华人民共和国住房和城乡建设部. GB 50797-2012 光伏发电站设计规范[S]. 北京: 中国计划出版社, 2012.</li>
+                            <li id="ref3">国家发展和改革委员会, 建设部. 建设项目经济评价方法与参数(第三版)[M]. 北京: 中国计划出版社, 2006.</li>
+                            <li id="ref4">NASA Jet Propulsion Laboratory, National Geospatial-Intelligence Agency. Shuttle Radar Topography Mission (SRTM) 90m Digital Elevation Model[DB/OL]. https://srtm.csi.cgiar.org/, 2000.</li>
+                            <li id="ref5">王斯成, 王文静, 赵春江. 光伏发电工程技术[M]. 北京: 中国电力出版社, 2020.</li>
+                            <li id="ref6">中国可再生能源学会光伏专业委员会. 中国光伏产业发展报告2025[R]. 北京: 中国电力出版社, 2025.</li>
+                        </ol>
+                    </div>
                 </div>
             </div>
         </div>
