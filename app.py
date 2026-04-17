@@ -19,13 +19,13 @@ app = Flask(__name__, template_folder=TEMPLATES_DIR)
 AMAP_KEY = "44d3e38673dc18b760f544a0d48f8f7f"
 
 # ==========================================
-# 1. 光伏发电量仿真模型（核心修复版）
+# 1. 光伏发电量仿真模型（最终修正版）
 # ==========================================
 class PVGenerationModel:
     def __init__(self):
         self.system_config = {
-            'module_efficiency': 0.18,      # 组件效率18%
-            'performance_ratio': 0.80,       # 系统PR 80%
+            'module_efficiency': 0.18,      # 仅做展示，不参与核心计算
+            'performance_ratio': 0.80,       # 系统性能比PR，行业通用0.75-0.85
             'NOCT': 45,
             'temp_loss_coeff': 0.004
         }
@@ -46,104 +46,122 @@ class PVGenerationModel:
 
         self.site_elevation = self._get_elevation(self.site_lat, self.site_lon)
         
-        # ========== 【核心简化】直接用我国五类资源区的标准值 ==========
-        # 先判断属于哪类资源区，直接给标准GHI
+        # 获取标准年总辐照量GHI
         annual_ghi = self._get_standard_ghi(self.site_lat, self.site_lon, self.site_elevation)
         
         weather_df = self._get_monthly_data(annual_ghi)
-        generation_df = self._calculate_pv_generation_simple(weather_df, system_capacity_kw, annual_ghi)
+        generation_df, annual_gen_per_kw = self._calculate_pv_generation_correct(weather_df, system_capacity_kw, annual_ghi)
         
-        annual_gen_total = float(generation_df['monthly_generation_kwh'].sum())
-        annual_gen_per_kw = annual_gen_total / system_capacity_kw
+        annual_gen_total = annual_gen_per_kw * system_capacity_kw
         
-        print(f"\n✅ 计算完成（标准值验证版）：")
+        print(f"\n✅ 计算完成（行业标准公式版）：")
         print(f"   项目地点：{self.site_lat}°N, {self.site_lon}°E")
         print(f"   海拔：{self.site_elevation}m")
         print(f"   采用的年总辐照量GHI：{annual_ghi} kWh/m²")
         print(f"   单位kW年发电量：{annual_gen_per_kw:.2f} kWh/kW")
-        print(f"   1MW项目总年发电量：{annual_gen_total/10000:.2f} 万kWh\n")
+        print(f"   {system_capacity_kw}kW项目总年发电量：{annual_gen_total/10000:.2f} 万kWh\n")
         
         return generation_df, annual_gen_per_kw
 
     def _generate_random_land_point(self):
-        return round(random.uniform(29.5, 29.7), 6), round(random.uniform(91.0, 91.2), 6) # 简化为拉萨附近
+        # 中国区域随机选点
+        lat_min, lat_max = 20.0, 50.0
+        lon_min, lon_max = 73.0, 135.0
+        return round(random.uniform(lat_min, lat_max), 6), round(random.uniform(lon_min, lon_max), 6)
 
     def _get_elevation(self, lat, lon):
         try:
             return self._get_open_elevation(lat, lon)
         except:
-            return 3650.0 # 拉萨默认海拔
+            # 模拟海拔兜底
+            lat, lon = float(lat), float(lon)
+            if 29 <= lat <= 31 and 90 <= lon <= 92:
+                return 3650.0
+            elif 37 <= lat <= 39 and 105 <= lon <= 107:
+                return 1110.0
+            elif 39 <= lat <= 41 and 115 <= lon <= 117:
+                return 43.0
+            elif 30 <= lat <= 32 and 120 <= lon <= 122:
+                return 4.0
+            elif 28 <= lat <= 30 and 105 <= lon <= 108:
+                return 259.0
+            else:
+                return 100.0
 
     @lru_cache(maxsize=100)
     def _get_open_elevation(self, lat, lon):
         base_url = "https://api.open-elevation.com/api/v1/lookup"
         params = {"locations": f"{lat},{lon}"}
-        headers = {"User-Agent": "Mozilla/5.0"}
+        headers = {"User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36"}
         response = requests.get(base_url, params=params, headers=headers, timeout=10)
+        response.raise_for_status()
         data = response.json()
         if "results" in data and len(data["results"]) > 0:
-            return round(float(data["results"][0]["elevation"]), 1)
-        raise Exception("API无数据")
+            elevation = data["results"][0]["elevation"]
+            return round(float(elevation), 1)
+        raise Exception("API无有效海拔数据")
 
-    # ========== 【核心修复1】我国五类太阳能资源区标准GHI值 ==========
+    # 我国五类太阳能资源区标准GHI值（国标GB/T 37526-2019）
     def _get_standard_ghi(self, lat, lon, elevation):
-        """
-        直接用我国标准值，避免计算错误
-        Ⅰ类：≥1750 kWh/m²（西藏、青海西部）
-        Ⅱ类：1400-1750（内蒙古、宁夏、甘肃）
-        Ⅲ类：1200-1400（北京、天津、河北、山东）
-        Ⅳ类：1000-1200（上海、江苏、浙江）
-        Ⅴ类：<1000（重庆、贵州、四川）
-        """
         lat, lon = float(lat), float(lon)
         
-        # 拉萨（Ⅰ类）：29°-31°N，90°-92°E
+        # 拉萨（Ⅰ类资源区）：29°-31°N，90°-92°E
         if 29 <= lat <= 31 and 90 <= lon <= 92:
-            return 1800.0 + (elevation / 1000) * 50.0 # 1800+海拔修正
-        # 银川（Ⅱ类）：37°-39°N，105°-107°E
+            base_ghi = 1800.0
+            # 海拔修正：每升高1000m，辐照增加5%
+            elevation_correction = (elevation / 1000) * 0.05 * base_ghi
+            return base_ghi + elevation_correction
+        # 银川（Ⅱ类资源区）：37°-39°N，105°-107°E
         elif 37 <= lat <= 39 and 105 <= lon <= 107:
             return 1550.0
-        # 北京（Ⅲ类）：39°-41°N，115°-117°E
+        # 北京（Ⅲ类资源区）：39°-41°N，115°-117°E
         elif 39 <= lat <= 41 and 115 <= lon <= 117:
             return 1300.0
-        # 上海（Ⅳ类）：30°-32°N，120°-122°E
+        # 上海（Ⅳ类资源区）：30°-32°N，120°-122°E
         elif 30 <= lat <= 32 and 120 <= lon <= 122:
             return 1100.0
-        # 重庆（Ⅴ类）：28°-30°N，105°-108°E
+        # 重庆（Ⅴ类资源区）：28°-30°N，105°-108°E
         elif 28 <= lat <= 30 and 105 <= lon <= 108:
             return 950.0
-        # 其他地区：按纬度插值
+        # 其他地区：按纬度插值，符合我国分布
         else:
             abs_lat = abs(lat)
             base_ghi = 1700.0 - (abs_lat / 90) * 700.0
-            return max(900, min(2000, base_ghi))
+            # 海拔修正
+            elevation_correction = (elevation / 1000) * 0.05 * base_ghi
+            return max(900.0, min(2000.0, base_ghi + elevation_correction))
 
     def _get_monthly_data(self, annual_ghi):
         months = np.arange(1, 13, dtype=int)
-        # 北半球月度分配（固定值，总和为1）
-        monthly_factor = np.array([0.05, 0.06, 0.08, 0.10, 0.12, 0.14, 0.14, 0.12, 0.10, 0.08, 0.06, 0.05])
+        # 北半球月度辐照分配（行业通用，总和为1）
+        if self.site_lat >= 0:
+            monthly_factor = np.array([0.05, 0.06, 0.08, 0.10, 0.12, 0.14, 0.14, 0.12, 0.10, 0.08, 0.06, 0.05])
+        else:
+            monthly_factor = np.array([0.14, 0.14, 0.12, 0.10, 0.08, 0.06, 0.05, 0.05, 0.06, 0.08, 0.10, 0.12])
         monthly_ghi = annual_ghi * monthly_factor
         return pd.DataFrame({
             'month': months.tolist(),
             'GHI': monthly_ghi.tolist()
         })
 
-    # ========== 【核心修复2】最简单、最不容易错的发电量公式 ==========
-    def _calculate_pv_generation_simple(self, weather_df, system_capacity_kw, annual_ghi):
+    # ========== 【最终修正版】行业标准发电量计算公式 ==========
+    def _calculate_pv_generation_correct(self, weather_df, system_capacity_kw, annual_ghi):
         df = weather_df.copy()
         config = self.system_config
         
-        # 【经典公式】单位kW年发电量 = 年总辐照量 × 斜面修正 × 组件效率 × 系统PR
-        # 这是行业内最常用的简化公式，绝对不会错
-        annual_gen_per_kw_simple = annual_ghi * 1.1 * config['module_efficiency'] * config['performance_ratio']
+        # 【核心正确公式】单位kW年发电量 = 年辐照量 × 斜面修正系数 × 系统性能比PR
+        # 1kWp装机已经包含组件效率，无需重复相乘！
+        slope_correction = 1.1  # 最佳倾角斜面修正，行业通用值
+        annual_gen_per_kw = annual_ghi * slope_correction * config['performance_ratio']
         
-        # 按比例分配到每个月
+        # 按月度辐照占比，分配月度发电量
         total_ghi = df['GHI'].sum()
-        df['monthly_generation_kwh'] = (df['GHI'] / total_ghi) * (annual_gen_per_kw_simple * system_capacity_kw)
+        df['monthly_generation_kwh'] = (df['GHI'] / total_ghi) * (annual_gen_per_kw * system_capacity_kw)
         
-        print(f"   【经典公式验证】单位kW年发电量（简化）：{annual_gen_per_kw_simple:.2f} kWh/kW")
+        # 打印验证，确保公式正确
+        print(f"   【公式验证】{annual_ghi} kWh/m² × {slope_correction} × {config['performance_ratio']} = {annual_gen_per_kw:.2f} kWh/kW")
         
-        return df[['month', 'GHI', 'monthly_generation_kwh']]
+        return df[['month', 'GHI', 'monthly_generation_kwh']], annual_gen_per_kw
 
 # ==========================================
 # 2. 光伏经济性评估模型
