@@ -164,19 +164,21 @@ class PVGenerationModel:
         return df[['month', 'GHI', 'monthly_generation_kwh']], annual_gen_per_kw
 
 # ==========================================
-# 2. 光伏经济性评估模型（行业标准修正版）
+# 2. 光伏经济性评估模型（贴近PVsyst工程版）
 # ==========================================
 class PVEconomicModel:
     def __init__(self):
         self.economic_params = {
-            'grid_price': 0.55,                # 上网电价（元/kWh）
+            'grid_price': 0.55,                # 上网电价（元/kWh，含税）
             'initial_investment_per_kw': 3500.0,# 单位千瓦初始投资（元/kW）
-            'operation_cost_rate': 0.015,       # 首年运维费率（初始投资占比）
+            'operation_cost_rate': 0.025,       # 首年运维费率（初始投资占比，含保险、大修）
             'op_cost_growth_rate': 0.02,        # 运维成本年增长率（行业通用2%）
             'lifespan': 25,                      # 项目全生命周期（年）
             'first_year_degradation': 0.025,    # 组件首年衰减率（行业标准2.5%）
             'annual_degradation': 0.005,        # 组件次年起年衰减率（行业标准0.5%）
-            'discount_rate': 0.06                # 基准折现率（国家规范推荐6%）
+            'discount_rate': 0.06,               # 基准折现率（国家规范推荐6%）
+            'vat_rate': 0.13,                    # 增值税税率13%
+            'income_tax_rate': 0.25              # 企业所得税税率25%
         }
 
     def run_full_economic_analysis(self, annual_gen_total_kwh, system_capacity_kw):
@@ -188,61 +190,77 @@ class PVEconomicModel:
         # ========== 1. 基础参数计算 ==========
         # 初始投资（万元）
         initial_investment = (system_capacity_kw * params['initial_investment_per_kw']) / 10000.0
-        # 首年发电毛收益（万元）
-        annual_income = annual_gen_total_kwh * params['grid_price'] / 10000.0
+        # 不含税上网电价
+        grid_price_no_tax = params['grid_price'] / (1 + params['vat_rate'])
+        # 首年发电毛收益（万元，不含税）
+        annual_income = annual_gen_total_kwh * grid_price_no_tax / 10000.0
         # 首年运维成本（万元）
         annual_op_cost_first = initial_investment * params['operation_cost_rate']
 
-        # ========== 2. 全生命周期现金流计算（核心修正） ==========
-        # 初始化25年现金流列表，第0年为初始投资（负现金流）
-        cash_flow = [-initial_investment]
+        # ========== 2. 全生命周期现金流计算（含三免三减半税费） ==========
+        cash_flow = [-initial_investment]  # 第0年初始投资
         annual_gen_list = []
         annual_op_cost_list = []
+        cumulative_cash = [-initial_investment]  # 累计现金流，用于计算静态回收期
 
         for year in range(1, params['lifespan'] + 1):
-            # 计算当年发电量（考虑组件衰减）
+            # 当年发电量（考虑组件衰减）
             if year == 1:
                 year_gen = annual_gen_total_kwh * (1 - params['first_year_degradation'])
             else:
                 year_gen = annual_gen_list[-1] * (1 - params['annual_degradation'])
             annual_gen_list.append(year_gen)
 
-            # 计算当年运维成本（考虑年增长）
+            # 当年运维成本（考虑年增长）
             year_op_cost = annual_op_cost_first * (1 + params['op_cost_growth_rate']) ** (year - 1)
             annual_op_cost_list.append(year_op_cost)
 
-            # 当年净现金流（万元）
-            year_income = year_gen * params['grid_price'] / 10000.0
-            year_net_cash = year_income - year_op_cost
-            cash_flow.append(year_net_cash)
+            # 当年收入（不含税）
+            year_income = year_gen * grid_price_no_tax / 10000.0
+            # 当年税前利润
+            year_profit_before_tax = year_income - year_op_cost
 
-        # ========== 3. 核心指标计算（行业标准公式） ==========
-        # 1. 首年净收益（万元）
-        first_year_net_income = annual_income - annual_op_cost_first
-        # 2. 静态投资回收期（年）
-        static_payback = initial_investment / first_year_net_income if first_year_net_income > 0 else 99.99
+            # 光伏三免三减半所得税政策：前3年免征，4-6年减半征收
+            if year <= 3:
+                year_income_tax = 0.0
+            elif 4 <= year <= 6:
+                year_income_tax = max(year_profit_before_tax * params['income_tax_rate'] * 0.5, 0.0)
+            else:
+                year_income_tax = max(year_profit_before_tax * params['income_tax_rate'], 0.0)
+
+            # 当年净现金流
+            year_net_cash = year_profit_before_tax - year_income_tax
+            cash_flow.append(year_net_cash)
+            # 累计现金流
+            cumulative_cash.append(cumulative_cash[-1] + year_net_cash)
+
+        # ========== 3. 核心指标计算 ==========
+        # 1. 首年净收益（万元，税后）
+        first_year_net_income = cash_flow[1]
+        # 2. 静态投资回收期（年，动态累计计算）
+        static_payback = 99.99
+        for t in range(1, len(cumulative_cash)):
+            if cumulative_cash[t] >= 0:
+                # 插值法计算精确回收期
+                static_payback = (t - 1) + abs(cumulative_cash[t-1]) / (cumulative_cash[t] - cumulative_cash[t-1])
+                break
 
         # 3. 平准化度电成本LCOE（行业标准折现法）
-        total_cost_pv = initial_investment  # 折现总成本（初始投资第0年，无需折现）
-        total_gen_pv = 0.0  # 折现总发电量
+        total_cost_pv = initial_investment
+        total_gen_pv = 0.0
         for year in range(1, params['lifespan'] + 1):
-            # 当年成本折现
             year_cost_pv = annual_op_cost_list[year-1] / ((1 + params['discount_rate']) ** year)
             total_cost_pv += year_cost_pv
-            # 当年发电量折现
             year_gen_pv = annual_gen_list[year-1] / ((1 + params['discount_rate']) ** year)
             total_gen_pv += year_gen_pv
         LCOE = (total_cost_pv * 10000) / total_gen_pv if total_gen_pv > 0 else 0.9999
 
-        # 4. 内部收益率IRR（牛顿迭代法求解动态IRR）
+        # 4. 内部收益率IRR（牛顿迭代法）
         def npv(irr):
             return sum(cf / ((1 + irr) ** t) for t, cf in enumerate(cash_flow))
         
-        # 迭代求解IRR
-        irr_low = 0.0
-        irr_high = 0.5
+        irr_low, irr_high = 0.0, 0.5
         irr_result = 0.0
-        # 迭代100次，精度0.0001
         for _ in range(100):
             irr_mid = (irr_low + irr_high) / 2
             npv_mid = npv(irr_mid)
@@ -253,20 +271,17 @@ class PVEconomicModel:
                 irr_low = irr_mid
             else:
                 irr_high = irr_mid
-        IRR = irr_result * 100  # 转换为百分比
+        IRR = irr_result * 100
 
-        # ========== 5. 返回结果（对齐PVsyst输出） ==========
+        # ========== 5. 返回结果 ==========
         return {
             'initial_investment': round(initial_investment, 2),
             'first_year_gen': round(annual_gen_total_kwh / 10000, 2),
-            'first_year_income': round(annual_income, 2),
-            'first_year_op_cost': round(annual_op_cost_first, 2),
             'annual_net_income': round(first_year_net_income, 2),
             'payback_period': round(static_payback, 2),
             'LCOE': round(LCOE, 4),
             'IRR': round(IRR, 2)
         }
-
 # ==========================================
 # 3. 路由配置
 # ==========================================
